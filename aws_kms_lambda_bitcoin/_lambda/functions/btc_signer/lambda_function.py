@@ -51,7 +51,9 @@ def lambda_handler(event, context):
 
     logging.info("input is valid")
     pub_key = get_kms_public_key(key_id)
-    logging.info(f"got public key: {pub_key}")
     signature = sign_kms(key_id, message)
-    logging.info(f"got signature: {signature}")
-    return {"signature": repr(signature), "public_key": repr(pub_key)}
+    return {
+        "message": message_hex,
+        "signature": signature["Signature"].hex(),
+        "public_key": pub_key.hex(),
+    }
