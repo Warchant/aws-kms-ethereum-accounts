@@ -69,9 +69,17 @@ def get_signature(sig: bytes) -> bytes:
     '''
     signature_schema = asn1tools.compile_string(SIGNATURE_ASN)
     signature_decoded = signature_schema.decode('Ecdsa-Sig-Value', sig)
-    r_bytes = signature_decoded['r'].to_bytes(32, byteorder='big')
-    s_bytes = signature_decoded['s'].to_bytes(32, byteorder='big')
-    # this returns compact signature (64 bytes)
+    r, s = signature_decoded['r'], signature_decoded['s']
+    r_bytes = r.to_bytes(32, byteorder='big')
+
+    # https://medium.com/@ottosch/manually-creating-and-signing-a-bitcoin-transaction-87fbbfe46032
+    n = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141  # order of a curve
+    if r_bytes[0] > 0x7f:
+        r_bytes = b'\x00' + r_bytes
+    if s > n/2:
+        s = n - s
+
+    s_bytes = s.to_bytes(32, byteorder='big')
     return r_bytes + s_bytes
 
 
@@ -90,6 +98,9 @@ def lambda_handler(event, context):
         message: bytes = bytes.fromhex(message_hex)
     except Exception as e:
         raise ValueError("invalid hex encoding for `message` field") from e
+
+    if len(message) != 32:
+        raise ValueError("invalid message length (32 bytes expected)")
 
     logging.info("input is valid")
     puboutput = get_kms_public_key(key_id)
