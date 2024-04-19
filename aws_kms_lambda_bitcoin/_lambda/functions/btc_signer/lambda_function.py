@@ -35,6 +35,7 @@ def sign_kms(key_id: str, msg_hash: bytes) -> dict:
 
     return response
 
+
 def get_pubkey(pub_key: bytes) -> bytes:
     SUBJECT_ASN = """
     Key DEFINITIONS ::= BEGIN
@@ -60,7 +61,7 @@ def get_pubkey(pub_key: bytes) -> bytes:
 
 
 def get_signature(sig: bytes) -> bytes:
-    SIGNATURE_ASN = '''
+    SIGNATURE_ASN = """
     Signature DEFINITIONS ::= BEGIN
 
     Ecdsa-Sig-Value  ::=  SEQUENCE  {
@@ -68,31 +69,33 @@ def get_signature(sig: bytes) -> bytes:
            s     INTEGER  }
 
     END
-    '''
+    """
     signature_schema = asn1tools.compile_string(SIGNATURE_ASN)
-    signature_decoded = signature_schema.decode('Ecdsa-Sig-Value', sig)
-    r, s = signature_decoded['r'], signature_decoded['s']
-    r_bytes = r.to_bytes(32, byteorder='big')
+    signature_decoded = signature_schema.decode("Ecdsa-Sig-Value", sig)
+    r, s = signature_decoded["r"], signature_decoded["s"]
+    r_bytes = r.to_bytes(32, byteorder="big")
 
     # https://medium.com/@ottosch/manually-creating-and-signing-a-bitcoin-transaction-87fbbfe46032
-    n = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141  # order of a curve
+    n = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141  # order of a curve
     # this breaks invariant that the sig size is 64 bytes (compact form)
     # if r_bytes[0] > 0x7f:
     #     r_bytes = b'\x00' + r_bytes
-    if s > n/2:
+    if s > n / 2:
         s = n - s
 
-    s_bytes = s.to_bytes(32, byteorder='big')
+    s_bytes = s.to_bytes(32, byteorder="big")
     return r_bytes + s_bytes
 
-def verify_hmac(key:bytes, message:bytes, hmacsignature:bytes) -> bool:
+
+def verify_hmac(key: bytes, message: bytes, hmacsignature: bytes) -> bool:
     h = hmac.new(key, message, hashlib.sha256)
-    return h.digest() == hmacsignature
+    # use compare_digest to mitigate timing attacks
+    return hmac.compare_digest(h.digest(), hmacsignature)
 
 
-def check_hmac_signature(event:dict, message: bytes) -> None:
+def check_hmac_signature(event: dict, message: bytes) -> None:
     hmac_key_str = os.getenv("HMAC_KEY")
-    if hmac_key_str == 'skip':
+    if hmac_key_str == "skip":
         logging.warning("Skipping HMAC verification")
         return
 
@@ -102,7 +105,9 @@ def check_hmac_signature(event:dict, message: bytes) -> None:
     try:
         hmac_key = bytes.fromhex(hmac_key_str)
     except Exception as e:
-        raise ValueError("expected HMAC_KEY env var to be `skip` or hexencoded bytes") from e
+        raise ValueError(
+            "expected HMAC_KEY env var to be `skip` or hexencoded bytes"
+        ) from e
 
     if len(hmac_key) < 16:
         raise ValueError("HMAC_KEY is too short - expected at least 16 bytes")
@@ -155,5 +160,5 @@ def lambda_handler(event: dict, context) -> dict:
     return {
         "message": message_hex,
         "signature": signature.hex(),
-        "public_key": pubkey.hex()
+        "public_key": pubkey.hex(),
     }

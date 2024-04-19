@@ -33,9 +33,9 @@ class MyLambda(Construct):
             handler="lambda_function.lambda_handler",
             runtime=aws_lambda.Runtime.PYTHON_3_9,
             environment=env,
-            timeout=Duration.minutes(2),
+            timeout=Duration.minutes(1),
             code=code,
-            memory_size=256,
+            memory_size=128,
         )
 
         self.lf = lf
@@ -59,6 +59,9 @@ class AwsKmsLambdaBitcoinStack(Stack):
             env={
                 "LOG_LEVEL": "DEBUG",
                 "KMS_KEY_ID": cmk.key_id,
+                # Bohdan: for production env set this to hexencoded random 32 bytes (16+ bytes would be enough)
+                # for testing, value "skip" skips HMAC verification
+                "HMAC_KEY": "skip",
             },
         )
 
