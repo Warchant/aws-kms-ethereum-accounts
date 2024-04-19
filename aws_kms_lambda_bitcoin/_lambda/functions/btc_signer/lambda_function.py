@@ -1,6 +1,7 @@
 import logging
 import os
 import boto3
+import asn1tools
 
 session = boto3.session.Session()
 
@@ -17,7 +18,7 @@ def get_kms_public_key(key_id: str) -> bytes:
 
     response = client.get_public_key(KeyId=key_id)
 
-    return response["PublicKey"]
+    return response
 
 
 def sign_kms(key_id: str, msg_hash: bytes) -> dict:
@@ -31,6 +32,47 @@ def sign_kms(key_id: str, msg_hash: bytes) -> dict:
     )
 
     return response
+
+def get_pubkey(pub_key: bytes) -> bytes:
+    SUBJECT_ASN = """
+    Key DEFINITIONS ::= BEGIN
+
+    SubjectPublicKeyInfo  ::=  SEQUENCE  {
+       algorithm         AlgorithmIdentifier,
+       subjectPublicKey  BIT STRING
+     }
+
+    AlgorithmIdentifier  ::=  SEQUENCE  {
+        algorithm   OBJECT IDENTIFIER,
+        parameters  ANY DEFINED BY algorithm OPTIONAL
+      }
+
+    END
+    """
+
+    key = asn1tools.compile_string(SUBJECT_ASN)
+    key_decoded = key.decode("SubjectPublicKeyInfo", pub_key)
+
+    pub_key_raw = key_decoded["subjectPublicKey"][0]
+    return pub_key_raw  # this returns the raw 65 bytes public key
+
+
+def get_signature(sig: bytes) -> bytes:
+    SIGNATURE_ASN = '''
+    Signature DEFINITIONS ::= BEGIN
+
+    Ecdsa-Sig-Value  ::=  SEQUENCE  {
+           r     INTEGER,
+           s     INTEGER  }
+
+    END
+    '''
+    signature_schema = asn1tools.compile_string(SIGNATURE_ASN)
+    signature_decoded = signature_schema.decode('Ecdsa-Sig-Value', sig)
+    r_bytes = signature_decoded['r'].to_bytes(32, byteorder='big')
+    s_bytes = signature_decoded['s'].to_bytes(32, byteorder='big')
+    # this returns compact signature (64 bytes)
+    return r_bytes + s_bytes
 
 
 def lambda_handler(event, context):
@@ -50,10 +92,17 @@ def lambda_handler(event, context):
         raise ValueError("invalid hex encoding for `message` field") from e
 
     logging.info("input is valid")
-    pub_key = get_kms_public_key(key_id)
-    signature = sign_kms(key_id, message)
+    puboutput = get_kms_public_key(key_id)
+    sigoutput = sign_kms(key_id, message)
+
+    signature = get_signature(sigoutput["Signature"])
+    assert len(signature) == 64
+
+    pubkey = get_pubkey(puboutput["PublicKey"])
+    assert len(pubkey) == 65
+
     return {
         "message": message_hex,
-        "signature": signature["Signature"].hex(),
-        "public_key": pub_key.hex(),
+        "signature": signature.hex(),
+        "public_key": pubkey.hex()
     }
