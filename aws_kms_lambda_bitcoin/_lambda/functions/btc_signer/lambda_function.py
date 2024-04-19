@@ -88,7 +88,7 @@ def get_signature(sig: bytes) -> bytes:
 
 
 def verify_hmac(key: bytes, message: bytes, hmacsignature: bytes) -> bool:
-    h = hmac.new(key, message, hashlib.sha256)
+    h = hmac.new(key, message, digestmod=hashlib.sha256)
     # use compare_digest to mitigate timing attacks
     return hmac.compare_digest(h.digest(), hmacsignature)
 
