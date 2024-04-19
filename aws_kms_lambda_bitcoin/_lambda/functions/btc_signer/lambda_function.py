@@ -2,6 +2,8 @@ import logging
 import os
 import boto3
 import asn1tools
+import hashlib
+import hmac
 
 session = boto3.session.Session()
 
@@ -83,8 +85,41 @@ def get_signature(sig: bytes) -> bytes:
     s_bytes = s.to_bytes(32, byteorder='big')
     return r_bytes + s_bytes
 
+def verify_hmac(key:bytes, message:bytes, hmacsignature:bytes) -> bool:
+    h = hmac.new(key, message, hashlib.sha256)
+    return h.digest() == hmacsignature
 
-def lambda_handler(event, context):
+
+def check_hmac_signature(event:dict, message: bytes) -> None:
+    hmac_key_str = os.getenv("HMAC_KEY")
+    if hmac_key_str == 'skip':
+        logging.warning("Skipping HMAC verification")
+        return
+
+    if not hmac_key_str:
+        raise ValueError("missing required `HMAC_KEY` environment variable")
+
+    try:
+        hmac_key = bytes.fromhex(hmac_key_str)
+    except Exception as e:
+        raise ValueError("expected HMAC_KEY env var to be `skip` or hexencoded bytes") from e
+
+    if len(hmac_key) < 16:
+        raise ValueError("HMAC_KEY is too short - expected at least 16 bytes")
+
+    try:
+        hmac_signature = bytes.fromhex(event["hmac"])
+    except Exception as e:
+        raise ValueError("invalid hex encoding for `hmac` field") from e
+
+    # do verify
+    if not verify_hmac(hmac_key, message, hmac_signature):
+        raise ValueError("invalid hmac signature")
+
+    logging.info("HMAC signature is valid")
+
+
+def lambda_handler(event: dict, context) -> dict:
     _logger.debug("incoming event: {}".format(event))
 
     key_id = os.getenv("KMS_KEY_ID")
@@ -102,6 +137,10 @@ def lambda_handler(event, context):
 
     if len(message) != 32:
         raise ValueError("invalid message length (32 bytes expected)")
+
+    # in prod we do not want anybody to run this lambda...
+    # so we require a valid HMAC signature alongside the request
+    check_hmac_signature(event, message)
 
     logging.info("input is valid")
     puboutput = get_kms_public_key(key_id)
