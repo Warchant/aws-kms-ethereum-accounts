@@ -74,8 +74,9 @@ def get_signature(sig: bytes) -> bytes:
 
     # https://medium.com/@ottosch/manually-creating-and-signing-a-bitcoin-transaction-87fbbfe46032
     n = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141  # order of a curve
-    if r_bytes[0] > 0x7f:
-        r_bytes = b'\x00' + r_bytes
+    # this breaks invariant that the sig size is 64 bytes (compact form)
+    # if r_bytes[0] > 0x7f:
+    #     r_bytes = b'\x00' + r_bytes
     if s > n/2:
         s = n - s
 
